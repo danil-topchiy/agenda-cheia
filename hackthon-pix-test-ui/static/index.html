@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hackthon Pix Test UI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">PX</div>
+          <div>
+            <h1>Pix Test UI</h1>
+            <p>Agenda Cheia</p>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <span class="label">API Pix</span>
+          <strong id="pixApiBaseUrl">-</strong>
+        </div>
+        <div class="endpoint-card">
+          <span class="label">Webhook URL</span>
+          <div class="copy-row">
+            <strong id="webhookUrl">-</strong>
+            <button class="icon-button" id="copyWebhookUrl" title="Copiar webhook URL" type="button">
+              <span aria-hidden="true">Copy</span>
+            </button>
+          </div>
+        </div>
+
+        <nav class="nav-stack" aria-label="Views">
+          <a href="#charge">Cobrança</a>
+          <a href="#webhooks">Webhooks</a>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <section id="charge" class="workspace-grid">
+          <form class="panel form-panel" id="chargeForm">
+            <div class="panel-header">
+              <div>
+                <h2>Criar cobrança</h2>
+                <p>QRCode Pix via API Agenda Cheia</p>
+              </div>
+              <button type="submit" class="primary-button" id="createButton">Criar</button>
+            </div>
+
+            <div class="form-grid">
+              <label>
+                <span>Valor</span>
+                <div class="money-field">
+                  <span>R$</span>
+                  <input id="valueReais" name="valueReais" inputmode="decimal" value="5,00" required />
+                </div>
+              </label>
+
+              <label>
+                <span>Expiração</span>
+                <select id="expiresIn" name="expiresIn">
+                  <option value="300">5 min</option>
+                  <option value="600">10 min</option>
+                  <option value="900" selected>15 min</option>
+                  <option value="1800">30 min</option>
+                  <option value="3600">60 min</option>
+                </select>
+              </label>
+
+              <label class="span-2">
+                <span>Correlation ID</span>
+                <input id="correlationID" name="correlationID" required />
+              </label>
+
+              <label class="span-2">
+                <span>Comentário</span>
+                <input id="comment" name="comment" value="Sinal de agendamento" />
+              </label>
+
+              <label>
+                <span>Cliente</span>
+                <input id="customerName" name="customerName" placeholder="Nome" />
+              </label>
+
+              <label>
+                <span>Email</span>
+                <input id="customerEmail" name="customerEmail" type="email" placeholder="cliente@email.com" />
+              </label>
+
+              <label class="span-2">
+                <span>Telefone</span>
+                <input id="customerPhone" name="customerPhone" placeholder="5511999999999" />
+              </label>
+            </div>
+          </form>
+
+          <section class="panel result-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Cobrança atual</h2>
+                <p id="chargeSubtitle">Sem cobrança criada</p>
+              </div>
+              <span id="chargeStatus" class="status-pill muted">Idle</span>
+            </div>
+
+            <div class="qr-layout">
+              <div class="qr-box" id="qrBox">
+                <span>QR</span>
+              </div>
+              <div class="charge-details">
+                <dl>
+                  <div>
+                    <dt>Valor</dt>
+                    <dd id="chargeValue">-</dd>
+                  </div>
+                  <div>
+                    <dt>Expira</dt>
+                    <dd id="chargeExpires">-</dd>
+                  </div>
+                  <div>
+                    <dt>Provider ID</dt>
+                    <dd id="providerChargeID">-</dd>
+                  </div>
+                  <div>
+                    <dt>Payment Link</dt>
+                    <dd><a id="paymentLinkUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            <div class="brcode-block">
+              <div class="block-title">
+                <span>BR Code</span>
+                <button type="button" class="secondary-button" id="copyBrCode">Copiar</button>
+              </div>
+              <textarea id="brCode" readonly rows="4"></textarea>
+            </div>
+
+            <div class="action-row">
+              <button type="button" class="secondary-button" id="refreshCharge">Atualizar</button>
+              <button type="button" class="success-button" id="simulatePaid">Simular pagamento</button>
+              <button type="button" class="danger-button" id="simulateExpired">Simular expiração</button>
+            </div>
+          </section>
+        </section>
+
+        <section id="webhooks" class="panel webhooks-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Stream de webhooks</h2>
+              <p id="streamState">Conectando</p>
+            </div>
+            <div class="action-row compact">
+              <button type="button" class="secondary-button" id="clearEvents">Limpar</button>
+            </div>
+          </div>
+
+          <div class="webhook-grid">
+            <div class="event-list" id="eventList"></div>
+            <pre class="payload-view" id="payloadView">{}</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
