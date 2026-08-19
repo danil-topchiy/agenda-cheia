@@ -68,7 +68,7 @@ curl -X POST http://127.0.0.1:8000/charges \
 
 Esta API esta implementada para Woovi/OpenPix. Ela espera um AppID bruto no header `Authorization`, sem `Bearer`.
 
-A credencial base64 no formato `Client_Id:Client_Secret` e de Efi/Gerencianet. Ela nao deve ser usada em `WOOVI_APP_ID`: a Efi usa OAuth2 com Basic Auth e exige certificado mTLS em todas as chamadas da API Pix, inclusive `/oauth/token`.
+No sandbox, use o token/AppID completo exatamente como copiado do painel em `WOOVI_APP_ID`. Mesmo que o valor pareca base64 ou decodifique para `Client_Id:Client_Secret`, nao separe as partes; envie a string completa no header `Authorization`.
 
 ### Woovi sandbox
 
@@ -98,7 +98,14 @@ curl -X POST http://127.0.0.1:8000/charges \
   }'
 ```
 
-7. Abra o `paymentLinkUrl` retornado ou a cobranca no painel sandbox e use a opcao de simular pagamento. Quando a Woovi enviar `OPENPIX:CHARGE_COMPLETED`, confirme o status local:
+7. Abra o `paymentLinkUrl` retornado ou a cobranca no painel sandbox e use a opcao de simular pagamento. Tambem e possivel simular pela API de teste usando o `transactionID`/`identifier` retornado:
+
+```bash
+curl "https://api.woovi-sandbox.com/openpix/testing?transactionID=TRANSACTION_ID" \
+  -H "Authorization: $WOOVI_APP_ID"
+```
+
+8. Quando a Woovi enviar `OPENPIX:CHARGE_COMPLETED`, confirme o status local:
 
 ```bash
 curl http://127.0.0.1:8000/charges/sandbox-agenda-001
@@ -114,16 +121,16 @@ pytest tests/test_api.py::test_charge_flow_updates_created_charge_after_payment_
 
 Esse teste cria uma cobranca local via `POST /charges`, simula o webhook `OPENPIX:CHARGE_COMPLETED` e verifica que `GET /charges/{correlationID}` retorna `status=COMPLETED`.
 
-### Se o provedor for Efi
+### Integracao real no sandbox Woovi
 
-Antes de usar a credencial `Client_Id:Client_Secret`, sera necessario trocar ou adicionar um client Efi. O fluxo nao e compativel com o client Woovi atual:
+Para criar uma cobranca real no sandbox Woovi, simular o pagamento e consultar `COMPLETED`:
 
-1. Configure `EFI_CLIENT_ID`, `EFI_CLIENT_SECRET`, `EFI_CERT_PATH` e a chave Pix da conta sandbox.
-2. Use a base `https://pix-h.api.efipay.com.br`.
-3. Obtenha token em `POST /oauth/token` com Basic Auth e certificado mTLS.
-4. Crie a cobranca imediata em `POST /v2/cob` ou `PUT /v2/cob/:txid`.
-5. Cadastre webhook em `PUT /v2/webhook/:chave`; a Efi envia callbacks para `sua-url/pix`.
-6. Para testar confirmacao automatica no sandbox Efi, use valor entre R$ 0,01 e R$ 10,00. Valores acima de R$ 10,00 ficam ativos e nao geram webhook de confirmacao.
+```bash
+WOOVI_SANDBOX_APP_ID=seu_app_id_sandbox \
+pytest tests/test_woovi_sandbox_integration.py
+```
+
+Esse teste nao valida entrega de webhook para sua maquina local. Para isso, cadastre uma URL HTTPS publica apontando para `POST /webhooks/woovi`.
 
 ## Webhook Woovi
 
@@ -166,6 +173,3 @@ pytest
 - https://developers.woovi.com/docs/webhook/webhook-events-type
 - https://developers.woovi.com/docs/webhook/seguranca/webhook-signature-validation
 - https://developers.woovi.com/docs/webhook/seguranca/webhook-public-keys
-- https://dev.efipay.com.br/en/docs/api-pix/credenciais/
-- https://dev.efipay.com.br/en/docs/api-pix/cobrancas-imediatas/
-- https://dev.efipay.com.br/en/docs/api-pix/webhooks/
