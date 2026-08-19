@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Theme } from "@radix-ui/themes";
+import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,14 +13,39 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Agenda Cheia | Sua agenda em um só lugar",
-  description: "Acompanhe agendamentos, cancelamentos e clientes em uma visão simples.",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const baseUrl = new URL(`${protocol}://${host}`);
+  const description = "Acompanhe agendamentos, cancelamentos e clientes em uma visão simples.";
+
+  return {
+    metadataBase: baseUrl,
+    title: {
+      default: "Agenda Cheia | Sua agenda em um só lugar",
+      template: "%s | Agenda Cheia",
+    },
+    description,
+    icons: {
+      icon: "/favicon.svg",
+      shortcut: "/favicon.svg",
+    },
+    openGraph: {
+      title: "Agenda Cheia | Sua agenda em um só lugar",
+      description,
+      type: "website",
+      locale: "pt_BR",
+      images: [{ url: new URL("/og.png", baseUrl).toString(), width: 1792, height: 938, alt: "Agenda Cheia: sua agenda, sob controle." }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: "Agenda Cheia | Sua agenda em um só lugar",
+      description,
+      images: [new URL("/og.png", baseUrl).toString()],
+    },
+  };
+}
 
 export default function RootLayout({
   children,
@@ -32,9 +57,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Theme accentColor="green" grayColor="sage" radius="medium" scaling="100%">
-          {children}
-        </Theme>
+        {children}
       </body>
     </html>
   );
