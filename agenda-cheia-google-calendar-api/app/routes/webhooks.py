@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.dependencies import get_database
-from app.repository import list_notifications, save_notification
+from app.repository import get_channel_by_channel_id, list_notifications, save_notification
 from app.schemas import WebhookAck, WebhookNotificationResponse
 from app.settings import Settings, get_settings
 from app.sync_service import run_calendar_sync_in_new_session
@@ -23,16 +23,28 @@ async def google_calendar_webhook(
 ) -> WebhookAck:
     headers = {key.lower(): value for key, value in request.headers.items()}
     channel_token = headers.get("x-goog-channel-token")
-    if settings.google_webhook_token and channel_token != settings.google_webhook_token:
+    channel = get_channel_by_channel_id(db, headers.get("x-goog-channel-id"))
+    expected_token = channel.token if channel and channel.token else settings.google_webhook_token
+    if expected_token and channel_token != expected_token:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Google channel token")
 
-    save_notification(db, headers)
+    save_notification(
+        db,
+        headers,
+        user_id=channel.user_id if channel else None,
+        calendar_id=channel.calendar_id if channel else None,
+    )
     db.commit()
 
     resource_state = headers.get("x-goog-resource-state")
     sync_scheduled = resource_state in {"sync", "exists", "not_exists"}
     if sync_scheduled:
-        background_tasks.add_task(run_calendar_sync_in_new_session, False)
+        background_tasks.add_task(
+            run_calendar_sync_in_new_session,
+            False,
+            channel.user_id if channel else None,
+            channel.calendar_id if channel else None,
+        )
 
     return WebhookAck(
         accepted=True,

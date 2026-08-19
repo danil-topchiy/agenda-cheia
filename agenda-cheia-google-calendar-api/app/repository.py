@@ -12,7 +12,14 @@ from app.google_calendar import (
     is_agenda_cheia_event,
     private_properties,
 )
-from app.models import AppointmentMirror, SyncState, WebhookChannel, WebhookNotification
+from app.models import (
+    AppointmentMirror,
+    GoogleOAuthConnection,
+    GoogleOAuthState,
+    SyncState,
+    WebhookChannel,
+    WebhookNotification,
+)
 from app.schemas import (
     AppointmentChange,
     AppointmentResponse,
@@ -21,17 +28,18 @@ from app.schemas import (
 )
 
 
-def sync_token_key(calendar_id: str) -> str:
-    return f"calendar_events_sync_token:{calendar_id}"
+def sync_token_key(calendar_id: str, user_id: str | None = None) -> str:
+    owner = user_id or "service-account"
+    return f"calendar_events_sync_token:{owner}:{calendar_id}"
 
 
-def get_sync_token(db: Session, calendar_id: str) -> str | None:
-    state = db.get(SyncState, sync_token_key(calendar_id))
+def get_sync_token(db: Session, calendar_id: str, user_id: str | None = None) -> str | None:
+    state = db.get(SyncState, sync_token_key(calendar_id, user_id))
     return state.value if state else None
 
 
-def set_sync_token(db: Session, calendar_id: str, token: str) -> None:
-    key = sync_token_key(calendar_id)
+def set_sync_token(db: Session, calendar_id: str, token: str, user_id: str | None = None) -> None:
+    key = sync_token_key(calendar_id, user_id)
     state = db.get(SyncState, key)
     if state:
         state.value = token
@@ -39,20 +47,24 @@ def set_sync_token(db: Session, calendar_id: str, token: str) -> None:
         db.add(SyncState(key=key, value=token))
 
 
-def clear_sync_token(db: Session, calendar_id: str) -> None:
-    state = db.get(SyncState, sync_token_key(calendar_id))
+def clear_sync_token(db: Session, calendar_id: str, user_id: str | None = None) -> None:
+    state = db.get(SyncState, sync_token_key(calendar_id, user_id))
     if state:
         db.delete(state)
 
 
-def clear_appointment_mirror(db: Session, calendar_id: str) -> None:
-    db.execute(delete(AppointmentMirror).where(AppointmentMirror.calendar_id == calendar_id))
+def clear_appointment_mirror(db: Session, calendar_id: str, user_id: str | None = None) -> None:
+    stmt = delete(AppointmentMirror).where(AppointmentMirror.calendar_id == calendar_id)
+    if user_id is not None:
+        stmt = stmt.where(AppointmentMirror.user_id == user_id)
+    db.execute(stmt)
 
 
 def upsert_appointment_from_event(
     db: Session,
     event: dict[str, Any],
     calendar_id: str,
+    user_id: str | None = None,
 ) -> AppointmentChange | None:
     event_id = event.get("id")
     if not event_id:
@@ -68,9 +80,15 @@ def upsert_appointment_from_event(
     change_type = _change_type(existing, appointment, raw_json)
 
     if existing is None:
-        existing = AppointmentMirror(google_event_id=event_id, calendar_id=calendar_id, state=appointment.state)
+        existing = AppointmentMirror(
+            google_event_id=event_id,
+            user_id=user_id,
+            calendar_id=calendar_id,
+            state=appointment.state,
+        )
         db.add(existing)
 
+    existing.user_id = user_id
     existing.calendar_id = calendar_id
     existing.state = appointment.state
     existing.google_status = appointment.google_status
@@ -94,8 +112,11 @@ def list_appointments_from_mirror(
     calendar_id: str,
     state: str | None,
     include_deleted: bool,
+    user_id: str | None = None,
 ) -> list[AppointmentResponse]:
     stmt = select(AppointmentMirror).where(AppointmentMirror.calendar_id == calendar_id)
+    if user_id is not None:
+        stmt = stmt.where(AppointmentMirror.user_id == user_id)
     if state:
         stmt = stmt.where(AppointmentMirror.state == state)
     if not include_deleted:
@@ -105,8 +126,15 @@ def list_appointments_from_mirror(
     return [_row_to_response(row) for row in db.scalars(stmt).all()]
 
 
-def save_channel(db: Session, response: dict[str, Any]) -> WebhookChannel:
+def save_channel(
+    db: Session,
+    response: dict[str, Any],
+    user_id: str | None = None,
+    calendar_id: str | None = None,
+) -> WebhookChannel:
     channel = WebhookChannel(
+        user_id=user_id,
+        calendar_id=calendar_id,
         channel_id=response["id"],
         resource_id=response["resourceId"],
         resource_uri=response.get("resourceUri"),
@@ -128,6 +156,13 @@ def latest_active_channel(db: Session) -> WebhookChannel | None:
     return db.scalars(stmt).first()
 
 
+def get_channel_by_channel_id(db: Session, channel_id: str | None) -> WebhookChannel | None:
+    if not channel_id:
+        return None
+    stmt = select(WebhookChannel).where(WebhookChannel.channel_id == channel_id)
+    return db.scalars(stmt).first()
+
+
 def mark_channel_inactive(db: Session, channel_id: str) -> None:
     stmt = select(WebhookChannel).where(WebhookChannel.channel_id == channel_id)
     channel = db.scalars(stmt).first()
@@ -140,6 +175,8 @@ def list_channels(db: Session) -> list[WatchChannelResponse]:
     rows = db.scalars(stmt).all()
     return [
         WatchChannelResponse(
+            user_id=row.user_id,
+            calendar_id=row.calendar_id,
             channel_id=row.channel_id,
             resource_id=row.resource_id,
             resource_uri=row.resource_uri,
@@ -151,8 +188,15 @@ def list_channels(db: Session) -> list[WatchChannelResponse]:
     ]
 
 
-def save_notification(db: Session, headers: dict[str, str | None]) -> WebhookNotification:
+def save_notification(
+    db: Session,
+    headers: dict[str, str | None],
+    user_id: str | None = None,
+    calendar_id: str | None = None,
+) -> WebhookNotification:
     notification = WebhookNotification(
+        user_id=user_id,
+        calendar_id=calendar_id,
         channel_id=headers.get("x-goog-channel-id"),
         resource_id=headers.get("x-goog-resource-id"),
         resource_state=headers.get("x-goog-resource-state"),
@@ -178,6 +222,8 @@ def list_notifications(
     return [
         WebhookNotificationResponse(
             id=row.id,
+            user_id=row.user_id,
+            calendar_id=row.calendar_id,
             channel_id=row.channel_id,
             resource_id=row.resource_id,
             resource_state=row.resource_state,
@@ -227,3 +273,62 @@ def _int_or_none(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def save_oauth_state(
+    db: Session,
+    state: str,
+    user_id: str,
+    calendar_id: str,
+    redirect_after: str | None,
+) -> GoogleOAuthState:
+    row = GoogleOAuthState(
+        state=state,
+        user_id=user_id,
+        calendar_id=calendar_id,
+        redirect_after=redirect_after,
+    )
+    db.add(row)
+    return row
+
+
+def pop_oauth_state(db: Session, state: str) -> GoogleOAuthState | None:
+    row = db.get(GoogleOAuthState, state)
+    if row is not None:
+        db.delete(row)
+    return row
+
+
+def get_oauth_connection(db: Session, user_id: str) -> GoogleOAuthConnection | None:
+    return db.get(GoogleOAuthConnection, user_id)
+
+
+def list_oauth_connections(db: Session) -> list[GoogleOAuthConnection]:
+    stmt = select(GoogleOAuthConnection).order_by(GoogleOAuthConnection.updated_at.desc())
+    return list(db.scalars(stmt).all())
+
+
+def save_oauth_connection(db: Session, connection: GoogleOAuthConnection) -> GoogleOAuthConnection:
+    existing = db.get(GoogleOAuthConnection, connection.user_id)
+    if existing is None:
+        db.add(connection)
+        return connection
+
+    existing.google_email = connection.google_email
+    existing.calendar_id = connection.calendar_id
+    existing.scopes = connection.scopes
+    existing.access_token = connection.access_token
+    existing.refresh_token = connection.refresh_token or existing.refresh_token
+    existing.token_uri = connection.token_uri
+    existing.client_id = connection.client_id
+    existing.client_secret = connection.client_secret
+    existing.expiry = connection.expiry
+    return existing
+
+
+def delete_oauth_connection(db: Session, user_id: str) -> bool:
+    connection = db.get(GoogleOAuthConnection, user_id)
+    if connection is None:
+        return False
+    db.delete(connection)
+    return True

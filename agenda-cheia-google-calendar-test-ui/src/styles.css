@@ -64,7 +64,7 @@ h1 {
 
 .api-control {
   display: grid;
-  grid-template-columns: auto minmax(260px, 420px) 38px auto;
+  grid-template-columns: auto minmax(220px, 320px) auto minmax(140px, 180px) auto minmax(120px, 150px) 38px auto;
   align-items: center;
   gap: 8px;
 }
@@ -258,6 +258,12 @@ textarea:focus {
   background: #ffffff;
 }
 
+.small {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -409,4 +415,3 @@ tbody tr:last-child td {
     padding-top: 14px;
   }
 }
-

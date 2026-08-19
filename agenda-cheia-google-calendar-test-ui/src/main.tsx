@@ -8,7 +8,9 @@ import {
   CalendarPlus,
   CheckCircle2,
   ClipboardList,
+  KeyRound,
   ListFilter,
+  LogIn,
   Play,
   Radio,
   RefreshCw,
@@ -52,6 +54,8 @@ type SyncRun = {
 };
 
 type WatchChannel = {
+  user_id?: string | null;
+  calendar_id?: string | null;
   channel_id: string;
   resource_id: string;
   resource_uri?: string | null;
@@ -62,6 +66,8 @@ type WatchChannel = {
 
 type WebhookNotification = {
   id: number;
+  user_id?: string | null;
+  calendar_id?: string | null;
   channel_id?: string | null;
   resource_id?: string | null;
   resource_state?: string | null;
@@ -79,19 +85,39 @@ type RequestLog = {
   at: string;
 };
 
+type OAuthLogin = {
+  authorization_url: string;
+  state: string;
+  user_id: string;
+  calendar_id: string;
+};
+
+type OAuthConnection = {
+  user_id: string;
+  google_email?: string | null;
+  calendar_id: string;
+  scopes: string[];
+  connected: boolean;
+  expiry?: string | null;
+  updated_at?: string | null;
+};
+
 const states: AppointmentState[] = ["scheduled", "confirmed", "cancelled", "completed", "no_show"];
 const sendUpdateOptions: SendUpdates[] = ["none", "all", "externalOnly"];
 const defaultBaseUrl = "http://127.0.0.1:8001";
 
 function App() {
   const [baseUrl, setBaseUrl] = useState(localStorage.getItem("calendarApiBaseUrl") || defaultBaseUrl);
-  const [activeTab, setActiveTab] = useState<"appointments" | "sync" | "webhook" | "output">("appointments");
+  const [activeTab, setActiveTab] = useState<"oauth" | "appointments" | "sync" | "webhook" | "output">("oauth");
+  const [authUserId, setAuthUserId] = useState(localStorage.getItem("calendarUserId") || "demo-user");
+  const [authCalendarId, setAuthCalendarId] = useState(localStorage.getItem("calendarId") || "primary");
   const [health, setHealth] = useState<"idle" | "ok" | "error">("idle");
   const [busy, setBusy] = useState<string | null>(null);
   const [lastResponse, setLastResponse] = useState<unknown>(null);
   const [logs, setLogs] = useState<RequestLog[]>([]);
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [oauthConnections, setOauthConnections] = useState<OAuthConnection[]>([]);
   const [channels, setChannels] = useState<WatchChannel[]>([]);
   const [notifications, setNotifications] = useState<WebhookNotification[]>([]);
   const [streamOpen, setStreamOpen] = useState(false);
@@ -153,6 +179,14 @@ function App() {
   }, [baseUrl]);
 
   useEffect(() => {
+    localStorage.setItem("calendarUserId", authUserId);
+  }, [authUserId]);
+
+  useEffect(() => {
+    localStorage.setItem("calendarId", authCalendarId);
+  }, [authCalendarId]);
+
+  useEffect(() => {
     checkHealth();
     return () => closeStream();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,6 +242,41 @@ function App() {
     }
   }
 
+  function calendarPath(path: string, params: Record<string, string | number | boolean | undefined> = {}) {
+    const [pathname, query = ""] = path.split("?");
+    const search = new URLSearchParams(query);
+    if (authUserId.trim()) search.set("user_id", authUserId.trim());
+    if (authCalendarId.trim()) search.set("calendar_id", authCalendarId.trim());
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    const queryString = search.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }
+
+  async function startOAuth() {
+    const result = await callApi<OAuthLogin>(
+      "google oauth login",
+      `/auth/google/login?${new URLSearchParams({
+        user_id: authUserId.trim(),
+        calendar_id: authCalendarId.trim() || "primary"
+      }).toString()}`
+    );
+    window.open(result.authorization_url, "_blank", "noopener,noreferrer");
+  }
+
+  async function refreshOauthConnections() {
+    const result = await callApi<OAuthConnection[]>("list oauth connections", "/auth/google/connections");
+    setOauthConnections(result);
+  }
+
+  async function disconnectOAuth(userId: string) {
+    await callApi("disconnect oauth", `/auth/google/connections/${encodeURIComponent(userId)}`, {
+      method: "DELETE"
+    });
+    await refreshOauthConnections();
+  }
+
   async function createAppointment(event: FormEvent) {
     event.preventDefault();
     const attendees = createForm.attendee_email
@@ -229,7 +298,7 @@ function App() {
       attendees,
       send_updates: createForm.send_updates
     });
-    const created = await callApi<Appointment>("create appointment", "/appointments", {
+    const created = await callApi<Appointment>("create appointment", calendarPath("/appointments"), {
       method: "POST",
       body: JSON.stringify(body)
     });
@@ -249,7 +318,7 @@ function App() {
       calendar_status: updateForm.calendar_status,
       send_updates: updateForm.send_updates
     });
-    await callApi<Appointment>(`update ${updateForm.appointment_id}`, `/appointments/${updateForm.appointment_id}`, {
+    await callApi<Appointment>(`update ${updateForm.appointment_id}`, calendarPath(`/appointments/${updateForm.appointment_id}`), {
       method: "PATCH",
       body: JSON.stringify(body)
     });
@@ -257,24 +326,27 @@ function App() {
 
   async function getAppointment() {
     if (!updateForm.appointment_id.trim()) return;
-    const appointment = await callApi<Appointment>(`get ${updateForm.appointment_id}`, `/appointments/${updateForm.appointment_id}`);
+    const appointment = await callApi<Appointment>(`get ${updateForm.appointment_id}`, calendarPath(`/appointments/${updateForm.appointment_id}`));
     setAppointments([appointment]);
   }
 
   async function listAppointments(event?: FormEvent) {
     event?.preventDefault();
-    const params = new URLSearchParams();
-    if (listForm.state) params.set("state", listForm.state);
-    params.set("source", listForm.source);
-    params.set("include_deleted", String(listForm.include_deleted));
-    if (listForm.time_min) params.set("time_min", listForm.time_min);
-    if (listForm.time_max) params.set("time_max", listForm.time_max);
-    const result = await callApi<Appointment[]>("list appointments", `/appointments?${params.toString()}`);
+    const result = await callApi<Appointment[]>(
+      "list appointments",
+      calendarPath("/appointments", {
+        state: listForm.state,
+        source: listForm.source,
+        include_deleted: listForm.include_deleted,
+        time_min: listForm.time_min,
+        time_max: listForm.time_max
+      })
+    );
     setAppointments(result);
   }
 
   async function pollSync(forceFull: boolean) {
-    const result = await callApi<SyncRun>("poll sync", `/sync/poll?force_full=${forceFull}`, {
+    const result = await callApi<SyncRun>("poll sync", calendarPath("/sync/poll", { force_full: forceFull }), {
       method: "POST",
       body: JSON.stringify({})
     });
@@ -288,7 +360,7 @@ function App() {
       token: watchForm.token,
       ttl_seconds: watchForm.ttl_seconds ? Number(watchForm.ttl_seconds) : undefined
     });
-    const created = await callApi<WatchChannel>("create watch", "/sync/watch", {
+    const created = await callApi<WatchChannel>("create watch", calendarPath("/sync/watch"), {
       method: "POST",
       body: JSON.stringify(body)
     });
@@ -310,7 +382,7 @@ function App() {
       channel_id: watchForm.channel_id,
       resource_id: watchForm.resource_id
     });
-    await callApi("stop watch", "/sync/watch/stop", {
+    await callApi("stop watch", calendarPath("/sync/watch/stop"), {
       method: "POST",
       body: JSON.stringify(body)
     });
@@ -377,6 +449,10 @@ function App() {
         <div className="api-control">
           <label htmlFor="baseUrl">API</label>
           <input id="baseUrl" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+          <label htmlFor="userId">User</label>
+          <input id="userId" value={authUserId} onChange={(event) => setAuthUserId(event.target.value)} />
+          <label htmlFor="calendarId">Calendar</label>
+          <input id="calendarId" value={authCalendarId} onChange={(event) => setAuthCalendarId(event.target.value)} />
           <button className="iconButton" onClick={checkHealth} title="Checar health">
             <RefreshCw size={18} />
           </button>
@@ -385,11 +461,42 @@ function App() {
       </header>
 
       <nav className="tabs" aria-label="Views">
+        <TabButton active={activeTab === "oauth"} onClick={() => setActiveTab("oauth")} icon={<KeyRound size={18} />} label="OAuth" />
         <TabButton active={activeTab === "appointments"} onClick={() => setActiveTab("appointments")} icon={<CalendarClock size={18} />} label="Appointments" />
         <TabButton active={activeTab === "sync"} onClick={() => setActiveTab("sync")} icon={<Radio size={18} />} label="Sync / Watch" />
         <TabButton active={activeTab === "webhook"} onClick={() => setActiveTab("webhook")} icon={<Bell size={18} />} label="Webhooks" />
         <TabButton active={activeTab === "output"} onClick={() => setActiveTab("output")} icon={<ClipboardList size={18} />} label="Output" />
       </nav>
+
+      {activeTab === "oauth" && (
+        <section className="grid two">
+          <Panel title="Conectar Google Calendar" icon={<KeyRound size={18} />}>
+            <div className="form">
+              <div className="formRow">
+                <TextField label="User ID" value={authUserId} onChange={setAuthUserId} />
+                <TextField label="Calendar ID" value={authCalendarId} onChange={setAuthCalendarId} />
+              </div>
+              <div className="buttonRow">
+                <button className="primary" onClick={startOAuth}>
+                  <LogIn size={17} />
+                  Abrir consentimento
+                </button>
+                <button className="secondary" onClick={refreshOauthConnections}>
+                  <RefreshCw size={17} />
+                  Atualizar conexões
+                </button>
+              </div>
+              <p className="muted">
+                Depois do callback, use o mesmo User ID nas abas de appointments, sync e watch.
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="Conexões OAuth" icon={<ClipboardList size={18} />}>
+            <OAuthConnectionsTable connections={oauthConnections} onDisconnect={disconnectOAuth} />
+          </Panel>
+        </section>
+      )}
 
       {activeTab === "appointments" && (
         <section className="grid two">
@@ -699,6 +806,8 @@ function ChannelsTable({ channels }: { channels: WatchChannel[] }) {
       <table>
         <thead>
           <tr>
+            <th>User</th>
+            <th>Calendar</th>
             <th>Channel</th>
             <th>Resource</th>
             <th>Expira</th>
@@ -708,6 +817,8 @@ function ChannelsTable({ channels }: { channels: WatchChannel[] }) {
         <tbody>
           {channels.map((channel) => (
             <tr key={channel.channel_id}>
+              <td>{channel.user_id || "-"}</td>
+              <td className="mono">{channel.calendar_id || "-"}</td>
               <td className="mono">{channel.channel_id}</td>
               <td className="mono">{channel.resource_id}</td>
               <td>{channel.expiration_ms ? new Date(channel.expiration_ms).toLocaleString() : "-"}</td>
@@ -716,7 +827,7 @@ function ChannelsTable({ channels }: { channels: WatchChannel[] }) {
           ))}
           {!channels.length && (
             <tr>
-              <td colSpan={4} className="empty">Sem canais carregados.</td>
+              <td colSpan={6} className="empty">Sem canais carregados.</td>
             </tr>
           )}
         </tbody>
@@ -733,6 +844,8 @@ function WebhookTable({ notifications }: { notifications: WebhookNotification[] 
         <thead>
           <tr>
             <th>ID</th>
+            <th>User</th>
+            <th>Calendar</th>
             <th>State</th>
             <th>Channel</th>
             <th>Resource</th>
@@ -744,6 +857,8 @@ function WebhookTable({ notifications }: { notifications: WebhookNotification[] 
           {rows.map((notification) => (
             <tr key={notification.id}>
               <td>{notification.id}</td>
+              <td>{notification.user_id || "-"}</td>
+              <td className="mono">{notification.calendar_id || "-"}</td>
               <td>{notification.resource_state || "-"}</td>
               <td className="mono">{notification.channel_id || "-"}</td>
               <td className="mono">{notification.resource_id || "-"}</td>
@@ -753,7 +868,54 @@ function WebhookTable({ notifications }: { notifications: WebhookNotification[] 
           ))}
           {!rows.length && (
             <tr>
-              <td colSpan={6} className="empty">Sem notificacoes.</td>
+              <td colSpan={8} className="empty">Sem notificacoes.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OAuthConnectionsTable({
+  connections,
+  onDisconnect
+}: {
+  connections: OAuthConnection[];
+  onDisconnect: (userId: string) => void;
+}) {
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Email</th>
+            <th>Calendar</th>
+            <th>Expira</th>
+            <th>Status</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {connections.map((connection) => (
+            <tr key={connection.user_id}>
+              <td>{connection.user_id}</td>
+              <td>{connection.google_email || "-"}</td>
+              <td className="mono">{connection.calendar_id || "-"}</td>
+              <td>{formatDate(connection.expiry)}</td>
+              <td>{connection.connected ? "conectado" : "sem token"}</td>
+              <td>
+                <button className="danger small" onClick={() => onDisconnect(connection.user_id)}>
+                  <Trash2 size={14} />
+                  Remover
+                </button>
+              </td>
+            </tr>
+          ))}
+          {!connections.length && (
+            <tr>
+              <td colSpan={6} className="empty">Sem conexões OAuth.</td>
             </tr>
           )}
         </tbody>
