@@ -9,6 +9,9 @@ Hackathon São Paulo · Ago/2026 · Track: Small Businesses · Panel score: 7.1 
 ## Structure
 
 - `landing/index.html` — landing page (pt-BR, single self-contained file — open directly in a browser)
+- `agenda-cheia-google-calendar-api/` — FastAPI service integrated with Google Calendar for appointments, sync polling and push notifications
+- `hackthon-google-calendar-test-ui/` — Vite/React UI to exercise Google Calendar API operations and the webhook log stream
+- `hackthon-pix-test-ui/` — FastAPI/static UI to create Pix charges and inspect Woovi webhook calls in real time
 - `docs/IMPLEMENTATION-PLAN.md` — one-day build plan: architecture, slot state machine + policy harness, stack with fallbacks, night-before checklist, 12h schedule with cut lines, 3-min demo script, voice-agent system prompt draft, risk register, judge Q&A prep
 
 ## The non-negotiable core loop (never cut)
