@@ -71,3 +71,38 @@ class ChargeRecord(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+
+class WebhookCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    event: str = Field(default="OPENPIX:CHARGE_COMPLETED", min_length=1)
+    url: str = Field(min_length=1)
+    authorization: str | None = None
+    is_active: bool = Field(default=True, alias="isActive")
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @field_validator("authorization")
+    @classmethod
+    def empty_authorization_to_none(cls, value: str | None) -> str | None:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    def to_woovi_payload(
+        self, *, default_authorization: str | None = None
+    ) -> dict[str, Any]:
+        webhook = self.model_dump(by_alias=True, exclude_none=True)
+        if "authorization" not in webhook and default_authorization:
+            webhook["authorization"] = default_authorization
+        return {"webhook": webhook}
+
+
+class WebhookRegistrationResponse(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    event: str | None = None
+    url: str | None = None
+    is_active: bool | None = Field(default=None, alias="isActive")
+    raw: dict[str, Any]
+
+    model_config = ConfigDict(populate_by_name=True)

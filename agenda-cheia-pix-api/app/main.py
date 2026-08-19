@@ -12,7 +12,13 @@ from app.database import (
     save_webhook_event,
     upsert_charge_from_provider,
 )
-from app.schemas import ChargeCreateRequest, ChargeRecord, ChargeResponse
+from app.schemas import (
+    ChargeCreateRequest,
+    ChargeRecord,
+    ChargeResponse,
+    WebhookCreateRequest,
+    WebhookRegistrationResponse,
+)
 from app.webhook_security import WebhookSignatureError, WebhookSignatureVerifier
 from app.woovi_client import MissingWooviAppIDError, WooviAPIError, WooviClient
 
@@ -74,6 +80,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Cobranca nao encontrada")
         return charge
 
+    @app.post(
+        "/webhooks",
+        response_model=WebhookRegistrationResponse,
+        response_model_by_alias=True,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_webhook(
+        webhook_request: WebhookCreateRequest, request: Request
+    ) -> dict[str, Any]:
+        payload = webhook_request.to_woovi_payload(
+            default_authorization=app_settings.woovi_webhook_authorization
+        )
+        woovi_client: WooviClient = request.app.state.woovi_client
+
+        try:
+            provider_response = await woovi_client.create_webhook(payload)
+        except MissingWooviAppIDError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except WooviAPIError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+        return normalize_webhook_response(provider_response)
+
     @app.post("/webhooks/woovi", status_code=status.HTTP_200_OK)
     async def woovi_webhook(
         request: Request,
@@ -133,6 +162,34 @@ def normalize_charge_response(
         "providerChargeID": saved.get("provider_charge_id"),
         "raw": provider_response,
     }
+
+
+def normalize_webhook_response(provider_response: dict[str, Any]) -> dict[str, Any]:
+    webhook = provider_response.get("webhook")
+    if not isinstance(webhook, dict):
+        webhook = {}
+
+    return {
+        "id": webhook.get("id") or webhook.get("identifier"),
+        "name": webhook.get("name"),
+        "event": webhook.get("event"),
+        "url": webhook.get("url"),
+        "isActive": webhook.get("isActive"),
+        "raw": redact_authorization(provider_response),
+    }
+
+
+def redact_authorization(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "********"
+            if key.lower() == "authorization"
+            else redact_authorization(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_authorization(item) for item in value]
+    return value
 
 
 app = create_app()

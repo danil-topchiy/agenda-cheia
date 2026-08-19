@@ -10,6 +10,7 @@ from app.main import create_app
 class FakeWooviClient:
     def __init__(self) -> None:
         self.payload: dict[str, Any] | None = None
+        self.webhook_payload: dict[str, Any] | None = None
 
     async def create_charge(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.payload = payload
@@ -30,6 +31,18 @@ class FakeWooviClient:
             "correlationID": payload["correlationID"],
             "brCode": "000201...",
         }
+
+    async def create_webhook(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.webhook_payload = payload
+        webhook = {
+            "id": "webhook-123",
+            "name": payload["webhook"]["name"],
+            "event": payload["webhook"]["event"],
+            "url": payload["webhook"]["url"],
+            "authorization": payload["webhook"].get("authorization"),
+            "isActive": payload["webhook"]["isActive"],
+        }
+        return {"webhook": webhook}
 
 
 @contextmanager
@@ -196,3 +209,37 @@ def test_webhook_authorization_is_checked_when_configured(tmp_path):
             json={"event": "OPENPIX:CHARGE_COMPLETED"},
         )
         assert accepted.status_code == 200
+
+
+def test_create_webhook_registers_url_in_woovi(tmp_path):
+    with make_client(
+        tmp_path,
+        WOOVI_WEBHOOK_AUTHORIZATION="shared-secret",
+    ) as (client, fake_woovi):
+        response = client.post(
+            "/webhooks",
+            json={
+                "name": "agenda-cheia-dev-completed",
+                "event": "OPENPIX:CHARGE_COMPLETED",
+                "url": "https://example.com/webhooks/woovi",
+            },
+        )
+
+        assert response.status_code == 201
+        assert fake_woovi.webhook_payload == {
+            "webhook": {
+                "name": "agenda-cheia-dev-completed",
+                "event": "OPENPIX:CHARGE_COMPLETED",
+                "url": "https://example.com/webhooks/woovi",
+                "isActive": True,
+                "authorization": "shared-secret",
+            }
+        }
+
+        body = response.json()
+        assert body["id"] == "webhook-123"
+        assert body["name"] == "agenda-cheia-dev-completed"
+        assert body["event"] == "OPENPIX:CHARGE_COMPLETED"
+        assert body["url"] == "https://example.com/webhooks/woovi"
+        assert body["isActive"] is True
+        assert body["raw"]["webhook"]["authorization"] == "********"

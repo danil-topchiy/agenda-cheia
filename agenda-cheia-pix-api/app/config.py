@@ -50,6 +50,10 @@ class Settings(BaseSettings):
         return f"{self.woovi_api_base_url}/api/v1/charge"
 
     @property
+    def webhook_url(self) -> str:
+        return f"{self.woovi_api_base_url}/api/v1/webhook"
+
+    @property
     def webhook_public_keys_url(self) -> str:
         if self.woovi_webhook_public_keys_url:
             return self.woovi_webhook_public_keys_url

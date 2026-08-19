@@ -6,6 +6,7 @@ API FastAPI para criar cobrancas Pix na Woovi com QR Code e receber webhooks de 
 
 - `POST /charges`: cria cobranca Pix na Woovi usando `POST /api/v1/charge`.
 - `GET /charges/{correlationID}`: consulta o registro local da cobranca.
+- `POST /webhooks`: cadastra dinamicamente uma URL de webhook na Woovi usando `POST /api/v1/webhook`.
 - `POST /webhooks/woovi`: recebe eventos da Woovi e atualiza o status local.
 - SQLite local para armazenar cobrancas e eventos recebidos.
 - Validacao opcional do header `Authorization` do webhook.
@@ -149,6 +150,21 @@ OPENPIX:CHARGE_CREATED
 ```
 
 Se configurar `WOOVI_WEBHOOK_AUTHORIZATION`, cadastre o mesmo valor em um header `Authorization` no webhook da Woovi.
+
+Tambem e possivel cadastrar a URL dinamicamente pela propria API Pix:
+
+```bash
+curl -X POST http://127.0.0.1:8000/webhooks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "agenda-cheia-dev-completed",
+    "event": "OPENPIX:CHARGE_COMPLETED",
+    "url": "https://sua-url-publica/webhooks/woovi",
+    "isActive": true
+  }'
+```
+
+Se `authorization` nao for enviado no JSON, a API usa `WOOVI_WEBHOOK_AUTHORIZATION` como valor padrao para registrar o webhook na Woovi. Para eventos diferentes, faca uma chamada por evento.
 
 Com `WOOVI_WEBHOOK_VERIFY_SIGNATURE=true`, a API valida `x-webhook-signature` usando `GET /api/v1/webhook/public-keys`.
 

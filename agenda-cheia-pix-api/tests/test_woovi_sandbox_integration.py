@@ -1,19 +1,24 @@
 import os
-import time
+from uuid import uuid4
 
 import httpx
 import pytest
 
+from app.config import Settings
+
 
 def test_create_and_pay_woovi_sandbox_charge():
-    app_id = os.environ.get("WOOVI_SANDBOX_APP_ID")
+    settings = Settings()
+    app_id = os.environ.get("WOOVI_SANDBOX_APP_ID") or settings.woovi_app_id
     if not app_id:
-        pytest.skip("WOOVI_SANDBOX_APP_ID nao configurado")
+        pytest.skip("WOOVI_SANDBOX_APP_ID ou WOOVI_APP_ID nao configurado")
 
     base_url = os.environ.get(
-        "WOOVI_SANDBOX_API_BASE_URL", "https://api.woovi-sandbox.com"
+        "WOOVI_SANDBOX_API_BASE_URL", settings.woovi_api_base_url
     ).rstrip("/")
-    correlation_id = f"agenda-sandbox-{int(time.time())}"
+    if "sandbox" not in base_url:
+        pytest.skip("Configure WOOVI_API_BASE_URL/WOOVI_SANDBOX_API_BASE_URL para sandbox")
+    correlation_id = f"agenda-sandbox-{uuid4()}"
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
