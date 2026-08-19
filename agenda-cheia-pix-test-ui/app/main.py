@@ -27,7 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.events = WebhookEventStore(limit=app_settings.webhook_event_limit)
         yield
 
-    app = FastAPI(title="Hackthon Pix Test UI", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Agenda Cheia Pix Test UI", version="0.1.0", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/")

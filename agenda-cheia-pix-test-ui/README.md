@@ -1,4 +1,4 @@
-# Hackthon Pix Test UI
+# Agenda Cheia Pix Test UI
 
 UI local para testar a `agenda-cheia-pix-api`.
 
@@ -14,7 +14,7 @@ Ela permite:
 ## Setup
 
 ```bash
-cd hackthon-pix-test-ui
+cd agenda-cheia-pix-test-ui
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -43,7 +43,7 @@ Use `WOOVI_WEBHOOK_VERIFY_SIGNATURE=false` para as simulacoes locais de pagament
 Em outro terminal, suba a UI:
 
 ```bash
-cd ../../hackthon-pix-test-ui
+cd ../../agenda-cheia-pix-test-ui
 uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
