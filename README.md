@@ -7,6 +7,9 @@ Landing page is bilingual (pt-BR default, EN via the PT|EN switch in the nav).
 ## Structure
 
 - `landing/index.html` — landing page (pt-BR, single self-contained file — open directly in a browser)
+- `agenda-cheia-google-calendar-api/` — FastAPI service integrated with Google Calendar for appointments, sync polling and push notifications
+- `agenda-cheia-google-calendar-test-ui/` — Vite/React UI to exercise Google Calendar API operations and the webhook log stream
+- `agenda-cheia-pix-test-ui/` — FastAPI/static UI to create Pix charges and inspect Woovi webhook calls in real time
 
 ## Core product loop
 

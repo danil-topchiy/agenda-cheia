@@ -107,6 +107,8 @@ class WatchCreateRequest(BaseModel):
 
 
 class WatchChannelResponse(BaseModel):
+    user_id: str | None = None
+    calendar_id: str | None = None
     channel_id: str
     resource_id: str
     resource_uri: str | None = None
@@ -128,6 +130,8 @@ class WebhookAck(BaseModel):
 
 class WebhookNotificationResponse(BaseModel):
     id: int
+    user_id: str | None = None
+    calendar_id: str | None = None
     channel_id: str | None = None
     resource_id: str | None = None
     resource_state: str | None = None
@@ -135,6 +139,28 @@ class WebhookNotificationResponse(BaseModel):
     message_number: str | None = None
     channel_token: str | None = None
     received_at: datetime
+
+
+class OAuthLoginResponse(BaseModel):
+    authorization_url: str
+    state: str
+    user_id: str
+    calendar_id: str
+
+
+class OAuthConnectionResponse(BaseModel):
+    user_id: str
+    google_email: str | None = None
+    calendar_id: str
+    scopes: list[str]
+    connected: bool
+    expiry: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class OAuthCallbackResponse(BaseModel):
+    connected: bool
+    connection: OAuthConnectionResponse
 
 
 def _is_aware(value: datetime) -> bool:

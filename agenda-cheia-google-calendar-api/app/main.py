@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.database import init_db
 from app.google_calendar import CalendarConfigurationError
-from app.routes import appointments, sync, webhooks
+from app.routes import appointments, auth, sync, webhooks
 from app.settings import get_settings
 from app.sync_service import run_calendar_sync_in_new_session
 
@@ -57,6 +57,7 @@ app.add_middleware(
 )
 
 app.include_router(appointments.router)
+app.include_router(auth.router)
 app.include_router(sync.router)
 app.include_router(webhooks.router)
 

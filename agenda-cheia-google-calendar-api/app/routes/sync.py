@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_calendar_client, get_database
-from app.google_calendar import GoogleCalendarClient
+from app.dependencies import get_database
+from app.oauth import calendar_client_for_user
 from app.repository import (
     latest_active_channel,
     list_channels,
@@ -25,11 +25,14 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 @router.post("/poll", response_model=SyncRunResponse)
 def poll_calendar_changes(
     force_full: bool = False,
+    user_id: str | None = None,
+    calendar_id: str | None = None,
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
+    settings: Settings = Depends(get_settings),
 ) -> SyncRunResponse:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     try:
-        return run_calendar_sync(db, client, force_full=force_full)
+        return run_calendar_sync(db, client, force_full=force_full, user_id=user_id)
     except HttpError as exc:
         raise HTTPException(
             status_code=getattr(exc.resp, "status", status.HTTP_502_BAD_GATEWAY),
@@ -40,10 +43,12 @@ def poll_calendar_changes(
 @router.post("/watch", response_model=WatchChannelResponse, status_code=status.HTTP_201_CREATED)
 def create_watch_channel(
     payload: WatchCreateRequest | None = None,
+    user_id: str | None = None,
+    calendar_id: str | None = None,
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
     settings: Settings = Depends(get_settings),
 ) -> WatchChannelResponse:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     payload = payload or WatchCreateRequest()
     address = str(payload.address) if payload.address else _default_webhook_address(settings)
     if not address:
@@ -70,8 +75,12 @@ def create_watch_channel(
         ) from exc
 
     channel = save_channel(db, response)
+    channel.user_id = user_id
+    channel.calendar_id = client.calendar_id
     db.commit()
     return WatchChannelResponse(
+        user_id=channel.user_id,
+        calendar_id=channel.calendar_id,
         channel_id=channel.channel_id,
         resource_id=channel.resource_id,
         resource_uri=channel.resource_uri,
@@ -89,9 +98,12 @@ def get_watch_channels(db: Session = Depends(get_database)) -> list[WatchChannel
 @router.post("/watch/stop", status_code=status.HTTP_204_NO_CONTENT)
 def stop_watch_channel(
     payload: WatchStopRequest | None = None,
+    user_id: str | None = None,
+    calendar_id: str | None = None,
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
+    settings: Settings = Depends(get_settings),
 ) -> None:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     payload = payload or WatchStopRequest()
     channel_id = payload.channel_id
     resource_id = payload.resource_id
@@ -119,4 +131,3 @@ def _default_webhook_address(settings: Settings) -> str | None:
     if not settings.google_webhook_base_url:
         return None
     return settings.google_webhook_base_url.rstrip("/") + "/webhooks/google-calendar"
-

@@ -13,6 +13,9 @@ API FastAPI para criar, atualizar, listar e sincronizar appointments com Google 
 - `POST /webhooks/google-calendar`: recebe notificacoes do Google e dispara sync.
 - `GET /webhooks/google-calendar/notifications`: lista notificacoes recebidas.
 - `GET /webhooks/google-calendar/stream`: stream SSE de notificacoes para UI/testes.
+- `GET /auth/google/login`: gera URL OAuth para conectar o calendario real de um usuario.
+- `GET /auth/google/callback`: recebe callback OAuth e salva tokens do usuario.
+- `GET /auth/google/connections`: lista usuarios conectados via OAuth.
 - Mirror local em SQLite para consultar resultado de sync e historico basico de canais/notificacoes.
 
 ## Setup local
@@ -32,6 +35,8 @@ Documentacao interativa:
 
 ## Configuracao Google
 
+### Service account
+
 1. Crie ou selecione um projeto no Google Cloud.
 2. Habilite a Google Calendar API.
 3. Crie uma service account e baixe a chave JSON.
@@ -47,6 +52,59 @@ Para Google Workspace com domain-wide delegation, configure tambem:
 
 ```bash
 GOOGLE_DELEGATED_SUBJECT="usuario@dominio.com"
+```
+
+### OAuth de usuario
+
+Use OAuth quando a API precisa acessar o calendario real do usuario, sem pedir que ele compartilhe o calendario com uma service account.
+
+No Google Cloud:
+
+1. Habilite a Google Calendar API.
+2. Configure a OAuth consent screen.
+3. Crie um OAuth Client ID do tipo `Web application`.
+4. Adicione a redirect URI local:
+
+```text
+http://127.0.0.1:8001/auth/google/callback
+```
+
+5. Configure `.env`:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID="seu-client-id.apps.googleusercontent.com"
+GOOGLE_OAUTH_CLIENT_SECRET="seu-client-secret"
+GOOGLE_OAUTH_REDIRECT_URI="http://127.0.0.1:8001/auth/google/callback"
+GOOGLE_OAUTH_SCOPES="openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events"
+GOOGLE_OAUTH_PROMPT_CONSENT=true
+```
+
+Tambem e possivel usar o arquivo baixado pelo Google:
+
+```bash
+GOOGLE_OAUTH_CLIENT_SECRETS_FILE="/absolute/path/client_secret.json"
+```
+
+Gerar URL de consentimento:
+
+```bash
+curl "http://127.0.0.1:8001/auth/google/login?user_id=demo-user&calendar_id=primary"
+```
+
+Abra `authorization_url` no navegador e autorize. O Google chamara `/auth/google/callback`; a API salva `refresh_token` em SQLite.
+
+Depois use `user_id` nas operacoes:
+
+```bash
+curl "http://127.0.0.1:8001/appointments?user_id=demo-user&source=google"
+curl -X POST "http://127.0.0.1:8001/sync/poll?user_id=demo-user"
+curl -X POST "http://127.0.0.1:8001/sync/watch?user_id=demo-user"
+```
+
+Listar conexoes:
+
+```bash
+curl "http://127.0.0.1:8001/auth/google/connections"
 ```
 
 ## Modelo de estado

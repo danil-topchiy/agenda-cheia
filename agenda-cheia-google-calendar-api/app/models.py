@@ -10,6 +10,7 @@ class AppointmentMirror(Base):
     __tablename__ = "appointment_mirror"
 
     google_event_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     calendar_id: Mapped[str] = mapped_column(String(512), index=True)
     state: Mapped[str] = mapped_column(String(32), index=True)
     google_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -51,6 +52,8 @@ class WebhookChannel(Base):
     __tablename__ = "webhook_channel"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    calendar_id: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
     channel_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     resource_id: Mapped[str] = mapped_column(String(256), index=True)
     resource_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -64,6 +67,8 @@ class WebhookNotification(Base):
     __tablename__ = "webhook_notification"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    calendar_id: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
     channel_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     resource_id: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     resource_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -71,3 +76,34 @@ class WebhookNotification(Base):
     message_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     channel_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GoogleOAuthState(Base):
+    __tablename__ = "google_oauth_state"
+
+    state: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(256), index=True)
+    calendar_id: Mapped[str] = mapped_column(String(512), default="primary")
+    redirect_after: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GoogleOAuthConnection(Base):
+    __tablename__ = "google_oauth_connection"
+
+    user_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    google_email: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    calendar_id: Mapped[str] = mapped_column(String(512), default="primary")
+    scopes: Mapped[str] = mapped_column(Text)
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_uri: Mapped[str] = mapped_column(String(512), default="https://oauth2.googleapis.com/token")
+    client_id: Mapped[str] = mapped_column(Text)
+    client_secret: Mapped[str] = mapped_column(Text)
+    expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

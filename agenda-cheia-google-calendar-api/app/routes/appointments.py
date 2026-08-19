@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_calendar_client, get_database
+from app.dependencies import get_database
 from app.google_calendar import (
-    GoogleCalendarClient,
     build_event_body,
     event_to_appointment_response,
     private_properties,
 )
+from app.oauth import calendar_client_for_user
 from app.repository import list_appointments_from_mirror, upsert_appointment_from_event
 from app.schemas import AppointmentCreate, AppointmentResponse, AppointmentState, AppointmentUpdate
 from app.settings import Settings, get_settings
@@ -22,19 +22,21 @@ router = APIRouter(prefix="/appointments", tags=["appointments"])
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 def create_appointment(
     payload: AppointmentCreate,
+    user_id: str | None = Query(default=None),
+    calendar_id: str | None = Query(default=None),
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
     settings: Settings = Depends(get_settings),
 ) -> AppointmentResponse:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     body = build_event_body(payload, settings.default_timezone)
     try:
         event = client.create_event(body, send_updates=payload.send_updates)
     except HttpError as exc:
         raise _google_http_exception(exc) from exc
 
-    upsert_appointment_from_event(db, event, settings.google_calendar_id)
+    upsert_appointment_from_event(db, event, client.calendar_id, user_id=user_id)
     db.commit()
-    return event_to_appointment_response(event, settings.google_calendar_id)
+    return event_to_appointment_response(event, client.calendar_id)
 
 
 @router.get("", response_model=list[AppointmentResponse])
@@ -45,17 +47,20 @@ def list_appointments(
     time_min: datetime | None = Query(default=None),
     time_max: datetime | None = Query(default=None),
     max_results: int = Query(default=250, ge=1, le=2500),
+    user_id: str | None = Query(default=None),
+    calendar_id: str | None = Query(default=None),
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
     settings: Settings = Depends(get_settings),
 ) -> list[AppointmentResponse]:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     state_value = state.value if state else None
     if source == "local":
         return list_appointments_from_mirror(
             db,
-            settings.google_calendar_id,
+            client.calendar_id,
             state_value,
             include_deleted=include_deleted,
+            user_id=user_id,
         )
 
     try:
@@ -70,7 +75,7 @@ def list_appointments(
         raise _google_http_exception(exc) from exc
 
     return [
-        event_to_appointment_response(event, settings.google_calendar_id)
+        event_to_appointment_response(event, client.calendar_id)
         for event in events
     ]
 
@@ -78,25 +83,30 @@ def list_appointments(
 @router.get("/{appointment_id}", response_model=AppointmentResponse)
 def get_appointment(
     appointment_id: str,
-    client: GoogleCalendarClient = Depends(get_calendar_client),
+    user_id: str | None = Query(default=None),
+    calendar_id: str | None = Query(default=None),
+    db: Session = Depends(get_database),
     settings: Settings = Depends(get_settings),
 ) -> AppointmentResponse:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     try:
         event = client.get_event(appointment_id)
     except HttpError as exc:
         raise _google_http_exception(exc) from exc
 
-    return event_to_appointment_response(event, settings.google_calendar_id)
+    return event_to_appointment_response(event, client.calendar_id)
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentResponse)
 def update_appointment(
     appointment_id: str,
     payload: AppointmentUpdate,
+    user_id: str | None = Query(default=None),
+    calendar_id: str | None = Query(default=None),
     db: Session = Depends(get_database),
-    client: GoogleCalendarClient = Depends(get_calendar_client),
     settings: Settings = Depends(get_settings),
 ) -> AppointmentResponse:
+    client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
     try:
         existing_event = client.get_event(appointment_id)
         body = build_event_body(
@@ -114,9 +124,9 @@ def update_appointment(
     except HttpError as exc:
         raise _google_http_exception(exc) from exc
 
-    upsert_appointment_from_event(db, event, settings.google_calendar_id)
+    upsert_appointment_from_event(db, event, client.calendar_id, user_id=user_id)
     db.commit()
-    return event_to_appointment_response(event, settings.google_calendar_id)
+    return event_to_appointment_response(event, client.calendar_id)
 
 
 def _google_http_exception(exc: HttpError) -> HTTPException:
@@ -124,4 +134,3 @@ def _google_http_exception(exc: HttpError) -> HTTPException:
         status_code=getattr(exc.resp, "status", status.HTTP_502_BAD_GATEWAY),
         detail=exc._get_reason(),
     )
-

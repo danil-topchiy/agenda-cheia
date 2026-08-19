@@ -25,8 +25,17 @@ class CalendarConfigurationError(RuntimeError):
 
 
 class GoogleCalendarClient:
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        credentials: Any | None = None,
+        calendar_id: str | None = None,
+        after_execute: Any | None = None,
+    ):
         self.settings = settings
+        self.credentials = credentials
+        self.calendar_id = calendar_id or settings.google_calendar_id
+        self.after_execute = after_execute
         self._service: Any | None = None
 
     @property
@@ -41,6 +50,9 @@ class GoogleCalendarClient:
         return self._service
 
     def _credentials(self) -> Any:
+        if self.credentials is not None:
+            return self.credentials
+
         try:
             if self.settings.google_credentials_file:
                 credentials = service_account.Credentials.from_service_account_file(
@@ -60,22 +72,26 @@ class GoogleCalendarClient:
 
         return credentials
 
+    def _execute(self, request: Any) -> dict[str, Any]:
+        response = request.execute()
+        if self.after_execute is not None:
+            self.after_execute(self._credentials())
+        return response
+
     def create_event(self, body: dict[str, Any], send_updates: str = "none") -> dict[str, Any]:
-        return (
+        return self._execute(
             self.service.events()
             .insert(
-                calendarId=self.settings.google_calendar_id,
+                calendarId=self.calendar_id,
                 body=body,
                 sendUpdates=send_updates,
             )
-            .execute()
         )
 
     def get_event(self, event_id: str) -> dict[str, Any]:
-        return (
+        return self._execute(
             self.service.events()
-            .get(calendarId=self.settings.google_calendar_id, eventId=event_id)
-            .execute()
+            .get(calendarId=self.calendar_id, eventId=event_id)
         )
 
     def patch_event(
@@ -84,15 +100,14 @@ class GoogleCalendarClient:
         body: dict[str, Any],
         send_updates: str = "none",
     ) -> dict[str, Any]:
-        return (
+        return self._execute(
             self.service.events()
             .patch(
-                calendarId=self.settings.google_calendar_id,
+                calendarId=self.calendar_id,
                 eventId=event_id,
                 body=body,
                 sendUpdates=send_updates,
             )
-            .execute()
         )
 
     def list_appointments(
@@ -108,7 +123,7 @@ class GoogleCalendarClient:
             properties.append(f"{STATE_PROPERTY}={state}")
 
         params: dict[str, Any] = {
-            "calendarId": self.settings.google_calendar_id,
+            "calendarId": self.calendar_id,
             "privateExtendedProperty": properties,
             "singleEvents": True,
             "showDeleted": include_deleted,
@@ -124,7 +139,7 @@ class GoogleCalendarClient:
 
     def list_changes(self, sync_token: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
         params: dict[str, Any] = {
-            "calendarId": self.settings.google_calendar_id,
+            "calendarId": self.calendar_id,
             "showDeleted": True,
             "singleEvents": False,
             "maxResults": 2500,
@@ -135,7 +150,7 @@ class GoogleCalendarClient:
         events: list[dict[str, Any]] = []
         next_sync_token: str | None = None
         while True:
-            response = self.service.events().list(**params).execute()
+            response = self._execute(self.service.events().list(**params))
             events.extend(response.get("items", []))
             page_token = response.get("nextPageToken")
             if not page_token:
@@ -161,19 +176,20 @@ class GoogleCalendarClient:
         if token:
             body["token"] = token
 
-        return (
+        return self._execute(
             self.service.events()
-            .watch(calendarId=self.settings.google_calendar_id, body=body)
-            .execute()
+            .watch(calendarId=self.calendar_id, body=body)
         )
 
     def stop_channel(self, channel_id: str, resource_id: str) -> None:
         self.service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute()
+        if self.after_execute is not None:
+            self.after_execute(self._credentials())
 
     def _list_all_event_pages(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         while True:
-            response = self.service.events().list(**params).execute()
+            response = self._execute(self.service.events().list(**params))
             events.extend(response.get("items", []))
             page_token = response.get("nextPageToken")
             if not page_token:

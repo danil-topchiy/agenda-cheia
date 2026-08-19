@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.google_calendar import GoogleCalendarClient
+from app.oauth import calendar_client_for_user
 from app.repository import (
     clear_appointment_mirror,
     clear_sync_token,
@@ -24,32 +25,33 @@ def run_calendar_sync(
     db: Session,
     client: GoogleCalendarClient,
     force_full: bool = False,
+    user_id: str | None = None,
 ) -> SyncRunResponse:
-    calendar_id = client.settings.google_calendar_id
-    sync_token = None if force_full else get_sync_token(db, calendar_id)
+    calendar_id = client.calendar_id
+    sync_token = None if force_full else get_sync_token(db, calendar_id, user_id=user_id)
     full_sync = force_full or sync_token is None
     if force_full:
-        clear_appointment_mirror(db, calendar_id)
-        clear_sync_token(db, calendar_id)
+        clear_appointment_mirror(db, calendar_id, user_id=user_id)
+        clear_sync_token(db, calendar_id, user_id=user_id)
 
     try:
         events, next_sync_token = client.list_changes(sync_token=sync_token)
     except HttpError as exc:
         if getattr(exc.resp, "status", None) != 410:
             raise
-        clear_sync_token(db, calendar_id)
-        clear_appointment_mirror(db, calendar_id)
+        clear_sync_token(db, calendar_id, user_id=user_id)
+        clear_appointment_mirror(db, calendar_id, user_id=user_id)
         events, next_sync_token = client.list_changes(sync_token=None)
         full_sync = True
 
     changes: list[AppointmentChange] = []
     for event in events:
-        change = upsert_appointment_from_event(db, event, calendar_id)
+        change = upsert_appointment_from_event(db, event, calendar_id, user_id=user_id)
         if change is not None:
             changes.append(change)
 
     if next_sync_token:
-        set_sync_token(db, calendar_id, next_sync_token)
+        set_sync_token(db, calendar_id, next_sync_token, user_id=user_id)
 
     db.commit()
     return SyncRunResponse(
@@ -61,12 +63,16 @@ def run_calendar_sync(
     )
 
 
-def run_calendar_sync_in_new_session(force_full: bool = False) -> None:
+def run_calendar_sync_in_new_session(
+    force_full: bool = False,
+    user_id: str | None = None,
+    calendar_id: str | None = None,
+) -> None:
     settings = get_settings()
     with SessionLocal() as db:
-        client = GoogleCalendarClient(settings)
+        client = calendar_client_for_user(db, settings, user_id=user_id, calendar_id=calendar_id)
         try:
-            result = run_calendar_sync(db, client, force_full=force_full)
+            result = run_calendar_sync(db, client, force_full=force_full, user_id=user_id)
             logger.info("calendar sync completed with %s changes", result.changes_count)
         except Exception:
             logger.exception("calendar sync failed")
