@@ -11,6 +11,8 @@ API FastAPI para criar, atualizar, listar e sincronizar appointments com Google 
 - `POST /sync/poll`: executa sync incremental via `syncToken`.
 - `POST /sync/watch`: cria canal de push notification no Google Calendar.
 - `POST /webhooks/google-calendar`: recebe notificacoes do Google e dispara sync.
+- `GET /webhooks/google-calendar/notifications`: lista notificacoes recebidas.
+- `GET /webhooks/google-calendar/stream`: stream SSE de notificacoes para UI/testes.
 - Mirror local em SQLite para consultar resultado de sync e historico basico de canais/notificacoes.
 
 ## Setup local
@@ -116,6 +118,18 @@ Crie o canal:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/sync/watch
+```
+
+Listar notificacoes recebidas:
+
+```bash
+curl "http://127.0.0.1:8000/webhooks/google-calendar/notifications?limit=50"
+```
+
+Acompanhar notificacoes por SSE:
+
+```bash
+curl -N "http://127.0.0.1:8000/webhooks/google-calendar/stream"
 ```
 
 Observacoes praticas:

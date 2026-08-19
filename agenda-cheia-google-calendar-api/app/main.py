@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import init_db
@@ -40,6 +41,19 @@ app = FastAPI(
     title=get_settings().app_name,
     version="0.1.0",
     lifespan=lifespan,
+)
+
+settings = get_settings()
+allowed_origins = [
+    origin.strip()
+    for origin in settings.cors_allowed_origins.split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(appointments.router)

@@ -126,6 +126,16 @@ class WebhookAck(BaseModel):
     sync_scheduled: bool = False
 
 
+class WebhookNotificationResponse(BaseModel):
+    id: int
+    channel_id: str | None = None
+    resource_id: str | None = None
+    resource_state: str | None = None
+    resource_uri: str | None = None
+    message_number: str | None = None
+    channel_token: str | None = None
+    received_at: datetime
+
+
 def _is_aware(value: datetime) -> bool:
     return value.tzinfo is not None and value.utcoffset() is not None
-

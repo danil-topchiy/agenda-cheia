@@ -13,7 +13,12 @@ from app.google_calendar import (
     private_properties,
 )
 from app.models import AppointmentMirror, SyncState, WebhookChannel, WebhookNotification
-from app.schemas import AppointmentChange, AppointmentResponse, WatchChannelResponse
+from app.schemas import (
+    AppointmentChange,
+    AppointmentResponse,
+    WatchChannelResponse,
+    WebhookNotificationResponse,
+)
 
 
 def sync_token_key(calendar_id: str) -> str:
@@ -157,6 +162,32 @@ def save_notification(db: Session, headers: dict[str, str | None]) -> WebhookNot
     )
     db.add(notification)
     return notification
+
+
+def list_notifications(
+    db: Session,
+    after_id: int | None = None,
+    limit: int = 50,
+) -> list[WebhookNotificationResponse]:
+    stmt = select(WebhookNotification)
+    if after_id is not None:
+        stmt = stmt.where(WebhookNotification.id > after_id)
+    stmt = stmt.order_by(WebhookNotification.id.desc()).limit(limit)
+    rows = list(db.scalars(stmt).all())
+    rows.reverse()
+    return [
+        WebhookNotificationResponse(
+            id=row.id,
+            channel_id=row.channel_id,
+            resource_id=row.resource_id,
+            resource_state=row.resource_state,
+            resource_uri=row.resource_uri,
+            message_number=row.message_number,
+            channel_token=row.channel_token,
+            received_at=row.received_at,
+        )
+        for row in rows
+    ]
 
 
 def _change_type(

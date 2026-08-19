@@ -1,9 +1,13 @@
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
 from app.dependencies import get_database
-from app.repository import save_notification
-from app.schemas import WebhookAck
+from app.repository import list_notifications, save_notification
+from app.schemas import WebhookAck, WebhookNotificationResponse
 from app.settings import Settings, get_settings
 from app.sync_service import run_calendar_sync_in_new_session
 
@@ -36,3 +40,42 @@ async def google_calendar_webhook(
         sync_scheduled=sync_scheduled,
     )
 
+
+@router.get("/google-calendar/notifications", response_model=list[WebhookNotificationResponse])
+def google_calendar_notifications(
+    after_id: int | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_database),
+) -> list[WebhookNotificationResponse]:
+    return list_notifications(db, after_id=after_id, limit=max(1, min(limit, 200)))
+
+
+@router.get("/google-calendar/stream")
+async def google_calendar_notification_stream(
+    after_id: int | None = None,
+    poll_interval_seconds: float = 1.5,
+    limit: int = 50,
+) -> StreamingResponse:
+    async def events():
+        last_id = after_id
+        interval = max(0.5, min(poll_interval_seconds, 10.0))
+        batch_limit = max(1, min(limit, 200))
+        yield "event: ready\ndata: {\"status\":\"connected\"}\n\n"
+        while True:
+            with SessionLocal() as db:
+                rows = list_notifications(db, after_id=last_id, limit=batch_limit)
+            for row in rows:
+                last_id = row.id
+                payload = row.model_dump_json()
+                yield f"id: {row.id}\nevent: notification\ndata: {payload}\n\n"
+            await asyncio.sleep(interval)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

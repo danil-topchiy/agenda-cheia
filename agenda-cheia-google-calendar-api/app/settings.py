@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     google_webhook_base_url: str | None = None
     google_webhook_token: str | None = None
     watch_ttl_seconds: int = Field(default=604800, ge=60)
+    cors_allowed_origins: str = "*"
 
     enable_polling_on_startup: bool = False
     poll_interval_seconds: int = Field(default=300, ge=30)
