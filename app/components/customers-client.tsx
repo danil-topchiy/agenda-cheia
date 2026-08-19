@@ -8,7 +8,7 @@ import { customers } from "../data";
 
 type CustomerFilter = "Todos" | "Ativo" | "Lista de espera" | "Sem retorno";
 
-export function CustomersClient() {
+export function CustomersClient({ userName }: { userName: string }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CustomerFilter>("Todos");
   const [modalOpen, setModalOpen] = useState(false);
@@ -24,7 +24,7 @@ export function CustomersClient() {
   }, [filter, query]);
 
   return (
-    <AppShell active="customers">
+    <AppShell active="customers" userName={userName}>
       <header className="page-header">
         <div>
           <p className="page-date">Base unificada</p>

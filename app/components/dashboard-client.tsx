@@ -8,7 +8,7 @@ import { bookings, type BookingStatus } from "../data";
 
 const statusFilters: Array<"Todos" | BookingStatus> = ["Todos", "Confirmado", "Aguardando", "Cancelado"];
 
-export function DashboardClient() {
+export function DashboardClient({ userName }: { userName: string }) {
   const [day, setDay] = useState<"Hoje" | "Amanhã" | "Semana">("Hoje");
   const [status, setStatus] = useState<"Todos" | BookingStatus>("Todos");
   const [modalOpen, setModalOpen] = useState(false);
@@ -23,7 +23,7 @@ export function DashboardClient() {
   const cancelled = today.filter((booking) => booking.status === "Cancelado");
 
   return (
-    <AppShell active="agenda">
+    <AppShell active="agenda" userName={userName}>
       <header className="page-header">
         <div>
           <p className="page-date">Quarta-feira, 19 de agosto</p>

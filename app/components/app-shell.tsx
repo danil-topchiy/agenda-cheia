@@ -1,15 +1,22 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CalendarCheck, UsersThree, PlugsConnected, Bell, CaretDown } from "@phosphor-icons/react";
+import { CalendarCheck, UsersThree, PlugsConnected, Bell, SignOut } from "@phosphor-icons/react";
 import Link from "next/link";
 
 type AppShellProps = {
   active: "agenda" | "customers";
   children: ReactNode;
+  userName: string;
 };
 
-export function AppShell({ active, children }: AppShellProps) {
+function initials(value: string) {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0]}` : parts[0]?.slice(0, 2))
+    ?.toLocaleUpperCase("pt-BR") || "AC";
+}
+
+export function AppShell({ active, children, userName }: AppShellProps) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -38,9 +45,9 @@ export function AppShell({ active, children }: AppShellProps) {
         </div>
 
         <div className="sidebar-footer">
-          <span className="avatar avatar-owner">JS</span>
-          <div className="account-copy"><strong>Juliana Silva</strong><small>Salão da Ju</small></div>
-          <button className="icon-button subtle" aria-label="Abrir menu da conta"><CaretDown aria-hidden="true" /></button>
+          <span className="avatar avatar-owner">{initials(userName)}</span>
+          <div className="account-copy"><strong>{userName}</strong><small>Conta registrada</small></div>
+          <a className="icon-button subtle" href="/signout-with-chatgpt?return_to=%2F" aria-label="Sair da conta"><SignOut aria-hidden="true" /></a>
         </div>
       </aside>
 
