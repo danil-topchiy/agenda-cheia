@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenda-cheia-google-calendar-api"
+version = "0.1.0"
+description = "FastAPI service for managing appointments in Google Calendar."
+requires-python = ">=3.11"
+dependencies = [
+    "email-validator>=2.2,<3.0",
+    "fastapi>=0.116,<1.0",
+    "google-api-python-client>=2.176,<3.0",
+    "google-auth>=2.40,<3.0",
+    "pydantic-settings>=2.10,<3.0",
+    "SQLAlchemy>=2.0,<3.0",
+    "uvicorn[standard]>=0.35,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28,<1.0",
+    "pytest>=8.3,<9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
